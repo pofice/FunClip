@@ -5,8 +5,10 @@
 
 from http import server
 import os
+import tempfile
 import logging
 import argparse
+from pathlib import Path
 import gradio as gr
 from funasr import AutoModel
 from videoclipper import VideoClipper
@@ -43,8 +45,43 @@ if __name__ == "__main__":
     server_name='127.0.0.1'
     if args.listen:
         server_name = '0.0.0.0'
-        
-        
+
+
+    def _safe_stem_from_media_path(media_path: object, default: str) -> str:
+        """Best-effort stem extraction from gradio input values."""
+        try:
+            if media_path is None:
+                return default
+
+            # gr.Video usually returns a str path; keep some backward compatibility.
+            if isinstance(media_path, (str, Path)):
+                return Path(media_path).stem or default
+            if isinstance(media_path, dict):
+                name = media_path.get("name") or media_path.get("path")
+                if name:
+                    return Path(name).stem or default
+        except Exception:
+            return default
+        return default
+
+
+    def _persist_srt_for_download(srt_text: str, stem: str, output_dir: str | None) -> str | None:
+        if not srt_text:
+            return None
+
+        target_dir: str
+        if output_dir is not None:
+            cleaned = output_dir.strip()
+            target_dir = os.path.abspath(cleaned) if cleaned else tempfile.mkdtemp(prefix="funclip_srt_")
+        else:
+            target_dir = tempfile.mkdtemp(prefix="funclip_srt_")
+
+        os.makedirs(target_dir, exist_ok=True)
+        srt_path = os.path.join(target_dir, f"{stem}.srt")
+        with open(srt_path, "w", encoding="utf-8") as f:
+            f.write(srt_text)
+        return srt_path
+
 
     def audio_recog(audio_input, sd_switch, hotwords, output_dir):
         return audio_clipper.recog(audio_input, sd_switch, None, hotwords, output_dir=output_dir)
@@ -67,11 +104,15 @@ if __name__ == "__main__":
         if video_input is not None:
             res_text, res_srt, video_state = video_recog(
                 video_input, 'No', hotwords, output_dir=output_dir)
-            return res_text, res_srt, video_state, None
+            stem = _safe_stem_from_media_path(video_input, default="video")
+            srt_file = _persist_srt_for_download(res_srt, stem, output_dir)
+            return res_text, res_srt, video_state, None, srt_file
         if audio_input is not None:
             res_text, res_srt, audio_state = audio_recog(
                 audio_input, 'No', hotwords, output_dir=output_dir)
-            return res_text, res_srt, None, audio_state
+            stem = "audio"
+            srt_file = _persist_srt_for_download(res_srt, stem, output_dir)
+            return res_text, res_srt, None, audio_state, srt_file
     
     def mix_recog_speaker(video_input, audio_input, hotwords, output_dir):
         output_dir = output_dir.strip()
@@ -83,11 +124,15 @@ if __name__ == "__main__":
         if video_input is not None:
             res_text, res_srt, video_state = video_recog(
                 video_input, 'Yes', hotwords, output_dir=output_dir)
-            return res_text, res_srt, video_state, None
+            stem = _safe_stem_from_media_path(video_input, default="video")
+            srt_file = _persist_srt_for_download(res_srt, stem, output_dir)
+            return res_text, res_srt, video_state, None, srt_file
         if audio_input is not None:
             res_text, res_srt, audio_state = audio_recog(
                 audio_input, 'Yes', hotwords, output_dir=output_dir)
-            return res_text, res_srt, None, audio_state
+            stem = "audio"
+            srt_file = _persist_srt_for_download(res_srt, stem, output_dir)
+            return res_text, res_srt, None, audio_state, srt_file
     
     def mix_clip(dest_text, video_spk_input, start_ost, end_ost, video_state, audio_state, output_dir):
         output_dir = output_dir.strip()
@@ -200,6 +245,7 @@ if __name__ == "__main__":
                             recog_button2 = gr.Button("👂👫 识别+区分说话人 | ASR+SD")
                 video_text_output = gr.Textbox(label="✏️ 识别结果 | Recognition Result")
                 video_srt_output = gr.Textbox(label="📖 SRT字幕内容 | RST Subtitles")
+                video_srt_download = gr.File(label="⬇️ 下载SRT字幕 | Download SRT", type="filepath")
             with gr.Column():
                 with gr.Tab("🧠 LLM智能裁剪 | LLM Clipping"):
                     with gr.Column():
@@ -250,14 +296,14 @@ if __name__ == "__main__":
                                     hotwords_input, 
                                     output_dir,
                                     ], 
-                            outputs=[video_text_output, video_srt_output, video_state, audio_state])
+                    outputs=[video_text_output, video_srt_output, video_state, audio_state, video_srt_download])
         recog_button2.click(mix_recog_speaker, 
                             inputs=[video_input, 
                                     audio_input, 
                                     hotwords_input, 
                                     output_dir,
                                     ], 
-                            outputs=[video_text_output, video_srt_output, video_state, audio_state])
+                    outputs=[video_text_output, video_srt_output, video_state, audio_state, video_srt_download])
         clip_button.click(mix_clip, 
                            inputs=[video_text_input, 
                                    video_spk_input, 
