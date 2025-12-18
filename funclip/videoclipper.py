@@ -31,17 +31,51 @@ class VideoClipper():
     def recog(self, audio_input, sd_switch='no', state=None, hotwords="", output_dir=None):
         if state is None:
             state = {}
-        sr, data = audio_input
 
-        # Convert to float64 consistently (includes data type checking)
+        # Gradio `gr.Audio` may provide:
+        # - (sr, np.ndarray)
+        # - a local filepath (str)
+        # - a dict-like payload depending on gradio version
+        if isinstance(audio_input, str):
+            data, sr = librosa.load(audio_input, sr=None, mono=False)
+        elif isinstance(audio_input, dict):
+            if 'data' in audio_input:
+                data = audio_input.get('data')
+                sr = audio_input.get('sr') or audio_input.get('sample_rate') or audio_input.get('sampling_rate')
+                if sr is None:
+                    raise ValueError("Audio input dict missing sample rate (sr/sample_rate/sampling_rate)")
+            else:
+                path = audio_input.get('path') or audio_input.get('name')
+                if not path:
+                    raise ValueError("Unsupported audio input dict payload")
+                data, sr = librosa.load(path, sr=None, mono=False)
+        else:
+            sr, data = audio_input
+
+        data = np.asarray(data)
         data = convert_pcm_to_float(data)
 
-        # assert sr == 16000, "16kHz sample rate required, {} given.".format(sr)
-        if sr != 16000: # resample with librosa
+        # Normalize channel layout and mix to mono for stable ASR.
+        if data.ndim == 2:
+            # Accept both (samples, channels) and (channels, samples)
+            if data.shape[0] <= 8 and data.shape[1] > data.shape[0]:
+                data = data.T
+            if data.shape[1] > 1:
+                logging.warning("Input wav shape: %s, mixing channels to mono.", data.shape)
+                data = data.mean(axis=1)
+            else:
+                data = data[:, 0]
+        elif data.ndim != 1:
+            raise ValueError(f"Unsupported audio array shape: {data.shape}")
+
+        if sr != 16000:  # resample with librosa
             data = librosa.resample(data, orig_sr=sr, target_sr=16000)
-        if len(data.shape) == 2:  # multi-channel wav input
-            logging.warning("Input wav shape: {}, only first channel reserved.".format(data.shape))
-            data = data[:,0]
+            sr = 16000
+
+        # Keep float32 for faster inference
+        if data.dtype != np.float32:
+            data = data.astype(np.float32)
+
         state['audio_input'] = (sr, data)
         if sd_switch == 'Yes':
             rec_result = self.funasr_model.generate(data, 

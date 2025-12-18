@@ -101,18 +101,21 @@ if __name__ == "__main__":
         else:
             output_dir = os.path.abspath(output_dir)
         audio_state, video_state = None, None
+        if audio_input is not None:
+            res_text, res_srt, audio_state = audio_recog(
+                audio_input, 'No', hotwords, output_dir=output_dir)
+            if video_input is not None:
+                res_text = "⚠️ 检测到同时提供了视频和音频，已优先识别音频。\n\n" + (res_text or "")
+            stem = "audio"
+            srt_file = _persist_srt_for_download(res_srt, stem, output_dir)
+            return res_text, res_srt, None, audio_state, srt_file
         if video_input is not None:
             res_text, res_srt, video_state = video_recog(
                 video_input, 'No', hotwords, output_dir=output_dir)
             stem = _safe_stem_from_media_path(video_input, default="video")
             srt_file = _persist_srt_for_download(res_srt, stem, output_dir)
             return res_text, res_srt, video_state, None, srt_file
-        if audio_input is not None:
-            res_text, res_srt, audio_state = audio_recog(
-                audio_input, 'No', hotwords, output_dir=output_dir)
-            stem = "audio"
-            srt_file = _persist_srt_for_download(res_srt, stem, output_dir)
-            return res_text, res_srt, None, audio_state, srt_file
+        return "请先选择视频或音频再点击识别。", "", None, None, None
     
     def mix_recog_speaker(video_input, audio_input, hotwords, output_dir):
         output_dir = output_dir.strip()
@@ -121,18 +124,21 @@ if __name__ == "__main__":
         else:
             output_dir = os.path.abspath(output_dir)
         audio_state, video_state = None, None
+        if audio_input is not None:
+            res_text, res_srt, audio_state = audio_recog(
+                audio_input, 'Yes', hotwords, output_dir=output_dir)
+            if video_input is not None:
+                res_text = "⚠️ 检测到同时提供了视频和音频，已优先识别音频。\n\n" + (res_text or "")
+            stem = "audio"
+            srt_file = _persist_srt_for_download(res_srt, stem, output_dir)
+            return res_text, res_srt, None, audio_state, srt_file
         if video_input is not None:
             res_text, res_srt, video_state = video_recog(
                 video_input, 'Yes', hotwords, output_dir=output_dir)
             stem = _safe_stem_from_media_path(video_input, default="video")
             srt_file = _persist_srt_for_download(res_srt, stem, output_dir)
             return res_text, res_srt, video_state, None, srt_file
-        if audio_input is not None:
-            res_text, res_srt, audio_state = audio_recog(
-                audio_input, 'Yes', hotwords, output_dir=output_dir)
-            stem = "audio"
-            srt_file = _persist_srt_for_download(res_srt, stem, output_dir)
-            return res_text, res_srt, None, audio_state, srt_file
+        return "请先选择视频或音频再点击识别。", "", None, None, None
     
     def mix_clip(dest_text, video_spk_input, start_ost, end_ost, video_state, audio_state, output_dir):
         output_dir = output_dir.strip()

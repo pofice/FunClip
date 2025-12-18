@@ -86,10 +86,15 @@ def load_state(output_dir):
     return state
 
 def convert_pcm_to_float(data):
-    if data.dtype == np.float64:
+    """Convert PCM/int audio arrays to floating point.
+
+    FunASR inference is noticeably slower on float64, so we normalize to
+    float32. The input may already be float32/float64 or integer PCM.
+    """
+    if data.dtype == np.float32:
         return data
-    elif data.dtype == np.float32:
-        return data.astype(np.float64)
+    elif data.dtype == np.float64:
+        return data.astype(np.float32)
     elif data.dtype == np.int16:
         bit_depth = 16
     elif data.dtype == np.int32:
@@ -103,7 +108,7 @@ def convert_pcm_to_float(data):
     max_int_value = float(2 ** (bit_depth - 1))
     if bit_depth == 8:
         data = data - 128
-    return (data.astype(np.float64) / max_int_value)
+    return (data.astype(np.float32) / max_int_value)
 
 def convert_time_to_millis(time_str):
     # 格式: [小时:分钟:秒,毫秒]
